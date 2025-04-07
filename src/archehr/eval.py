@@ -25,7 +25,7 @@ def do_eval(model, dataloader, device, loss, target, progress_bar=None):
             # Move inputs and labels to device
             batch = {k: v.to(device) for k, v in batch.items()}
             labels = batch['labels']
-            
+
             # Forward pass
             outputs = model(**batch)
 
@@ -34,7 +34,7 @@ def do_eval(model, dataloader, device, loss, target, progress_bar=None):
             val_loss += loss.item()
 
             # Compute accuracy
-            _, predicted = torch.max(outputs, 1)
+            _, predicted = torch.max(outputs.logits, dim=1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
@@ -46,7 +46,10 @@ def do_eval(model, dataloader, device, loss, target, progress_bar=None):
     # Compute metrics
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-    f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+    f1 = (
+        2 * (precision * recall) / (precision + recall) 
+        if (precision + recall) > 0 else 0
+    )
 
     avg_loss = val_loss / len(dataloader)
     accuracy = correct / total
