@@ -57,17 +57,17 @@ def do_eval(model, dataloader, device, loss, target, progress_bar=None):
     if progress_bar is not None:
         progress_bar.set_postfix(
             loss=f"{avg_loss:.4f}",
-            accuracy=f"{accuracy:.1%}",
-            precision=f"{precision:.1%}",
-            recall=f"{recall:.1%}",
+            acc=f"{accuracy:.1%}",
+            ppv=f"{precision:.1%}",
+            rec=f"{recall:.1%}",
             f1=f"{f1:.1%}",
         )
 
     output_dict = {
         'loss': avg_loss,
-        'accuracy': accuracy,
-        'precision': precision,
-        'recall': recall,
+        'acc': accuracy,
+        'ppv': precision,
+        'rec': recall,
         'f1': f1,
     }
 
