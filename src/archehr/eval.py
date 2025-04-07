@@ -63,4 +63,12 @@ def do_eval(model, dataloader, device, loss, target, progress_bar=None):
             f1=f"{f1:.1%}",
         )
 
-    return avg_loss, accuracy, precision, recall, f1
+    output_dict = {
+        'loss': avg_loss,
+        'accuracy': accuracy,
+        'precision': precision,
+        'recall': recall,
+        'f1': f1,
+    }
+
+    return output_dict

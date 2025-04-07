@@ -1,3 +1,4 @@
+import json
 import os
 from argparse import ArgumentParser
 
@@ -12,6 +13,7 @@ from archehr import SAVE_DIR
 from archehr.eval import do_eval
 from archehr.data.utils import load_data, make_query_sentence_pairs
 from archehr.data.dataset import QADataset
+from archehr.cross_encode.nli_deberta import remove_last_layer
 
 
 def parse_args():
@@ -110,6 +112,7 @@ def do_train(
     
     # Load the model and tokenizer
     model, tokenizer = load_model(model_name)
+    model = remove_last_layer(model)
 
     # Make the queries
     pairs_train = make_query_sentence_pairs(data_train)
@@ -146,6 +149,9 @@ def do_train(
     # Training loop
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
+
+    # Initialize the metrics list
+    metrics_list = []
     
     for epoch in (progress_bar := tqdm(range(num_epochs))):
         model.train()
@@ -166,7 +172,7 @@ def do_train(
         
         # Validation loop
         if epoch % 10 == 0:
-            _ = do_eval(
+            metrics = do_eval(
                 model,
                 dataloader_val,
                 device,
@@ -174,7 +180,13 @@ def do_train(
                 target=dataset_val.translate_dict['essential'],
                 progress_bar=progress_bar,
             )
-    
+            metrics_list.append(metrics)
+
+    # Save the metrics
+    metrics_path = SAVE_DIR / "metrics.json"
+    with open(metrics_path, "w") as f:
+        json.dump(metrics_list, f, indent=4)
+
     return model
 
 def main():
