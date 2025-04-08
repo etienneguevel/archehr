@@ -225,6 +225,10 @@ def do_train(
         with open(metrics_path, "w") as f:
             json.dump(metrics_list, f, indent=4)
 
+    # Save the model
+    if torch.distributed.get_rank() == 0:  # Save only on rank 0
+        model.save_pretrained(os.path.join(save_folder, 'model'))
+
     # Cleanup distributed process group
     destroy_process_group()
 
@@ -240,7 +244,7 @@ def main():
     os.makedirs(args.save_folder, exist_ok=True)
     
     # Train the model
-    model = do_train(
+    _ = do_train(
         model_name=args.model_name,
         data_path=args.data_path,
         batch_size=args.batch_size,
@@ -248,10 +252,7 @@ def main():
         learning_rate=args.learning_rate,
         save_folder=args.save_folder,
     )
-    
-    # Save the model
-    if torch.distributed.get_rank() == 0:  # Save only on rank 0
-        model.save_pretrained(os.path.join(args.save_folder, 'model'))
+
     
 if __name__ == "__main__":
     main()
