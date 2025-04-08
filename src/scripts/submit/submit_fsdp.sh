@@ -13,7 +13,7 @@ SAVE_NAME="/home/guevel/projects/archehr/logs/fsdp_deberta-v3-base-fc"
 WORLD_SIZE=4  # Number of GPUs to use
 
 # Run the submit.py script with the specified arguments
-python /home/etienneguevel/Documents/SCAI/projects/archehr/src/archehr/cross_encode/submit.py \
+python /home/guevel/projects/archehr/src/archehr/cross_encode/submit.py \
     --model_name "$MODEL_NAME" \
     --data_path "$DATA_PATH" \
     --batch_size "$BATCH_SIZE" \

@@ -1,7 +1,7 @@
 import os
 
 from archehr.cross_encode.train_fsdp import parse_args
-from archehr.utils import get_idle_gpus
+from archehr.utils.cluster import get_idle_gpus
 
 
 def main():
