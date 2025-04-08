@@ -116,6 +116,14 @@ def do_train(
     """
     # Initialize distributed process group
     init_process_group(backend="nccl")
+    
+    # Get the rank of the current process
+    rank = torch.distributed.get_rank()
+    
+    # Set the device for the current rank
+    torch.cuda.set_device(rank)
+    device = torch.device(f'cuda:{rank}')
+    print(f"Rank {rank} is using GPU {torch.cuda.current_device()}")
 
     # Load the data
     data = load_data(data_path)
@@ -128,6 +136,7 @@ def do_train(
     # Load the model and tokenizer
     model, tokenizer = load_model(model_name)
     model = remove_last_layer(model)
+    model.to(device)
 
     # Wrap the model with FSDP
     model = wrap(model)
@@ -161,13 +170,6 @@ def do_train(
         shuffle=False,
         collate_fn=collator,
     )
-    
-    # Training loop
-    device = torch.device(
-        f'cuda:{torch.cuda.current_device()}'
-        if torch.cuda.is_available() else 'cpu'
-    )
-    model.to(device)
 
     # Define the optimizer
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
