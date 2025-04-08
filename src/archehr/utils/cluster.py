@@ -1,4 +1,3 @@
-import os
 import subprocess
 
 
@@ -19,15 +18,3 @@ def get_idle_gpus():
             idle_gpus.append(gpu_index)
     
     return idle_gpus
-
-
-if __name__ == "__main__":
-    # Check for idle GPUs
-    idle_gpus = get_idle_gpus()
-    if not idle_gpus:
-        raise RuntimeError("No idle GPUs available!")
-
-    # Set CUDA_VISIBLE_DEVICES to the idle GPUs
-    os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, idle_gpus))
-
-    print(f"Using GPUs: {os.environ['CUDA_VISIBLE_DEVICES']}")

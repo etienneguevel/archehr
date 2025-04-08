@@ -1,6 +1,6 @@
 import json
 import os
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 
 import torch
 import torch.nn as nn
@@ -12,14 +12,13 @@ from transformers import (
     AutoTokenizer, AutoModelForSequenceClassification, DataCollatorWithPadding
 )
 
-from archehr import SAVE_DIR
 from archehr.eval import do_eval
+from archehr.cross_encode.nli_deberta import remove_last_layer
 from archehr.data.utils import load_data, make_query_sentence_pairs
 from archehr.data.dataset import QADataset
-from archehr.cross_encode.nli_deberta import remove_last_layer
 
 
-def parse_args():
+def parse_args() -> Namespace:
     """
     Parse command line arguments.
     
@@ -64,10 +63,10 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--save_name",
+        "--save_folder",
         type=str,
-        default="model",
-        help="Name to save the trained model."
+        required=True,
+        help="Path of the folder where to save information."
     )
     
     parser.add_argument(
@@ -102,7 +101,7 @@ def do_train(
     batch_size: int,
     num_epochs: int,
     learning_rate: float,
-    world_size: int,
+    save_folder: str,
 ) -> None:
     """
     Train a model on the Archehr dataset using FSDP.
@@ -113,7 +112,7 @@ def do_train(
         batch_size (int): Batch size for training.
         num_epochs (int): Number of epochs to train.
         learning_rate (float): Learning rate for the optimizer.
-        world_size (int): Number of processes for distributed training.
+        save_folder (str): Path to save the trained model and metrics.
     """
     # Initialize distributed process group
     init_process_group(backend="nccl")
@@ -163,48 +162,64 @@ def do_train(
         collate_fn=collator,
     )
     
+    # Training loop
+    device = torch.device(
+        f'cuda:{torch.cuda.current_device()}'
+        if torch.cuda.is_available() else 'cpu'
+    )
+    model.to(device)
+
     # Define the optimizer
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     
-    # Training loop
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model.to(device)
-
     # Initialize the metrics list
     metrics_list = []
     
-    for epoch in (progress_bar := tqdm(range(num_epochs))):
-        model.train()
-        for batch in dataloader_train:
-            # Move inputs and labels to device
-            batch = {k: v.to(device) for k, v in batch.items()}
+    with torch.profiler.profile(
+        activities=[
+            torch.profiler.ProfilerActivity.CPU,
+            torch.profiler.ProfilerActivity.CUDA,
+        ],
+        schedule=torch.profiler.schedule(wait=1, warmup=1, active=3),
+        on_trace_ready=torch.profiler.tensorboard_trace_handler(
+            save_folder / f'profile_{torch.distributed.get_rank()}',
+        ),
+        with_stack=True,
+    ) as prof:
+        for epoch in (progress_bar := tqdm(range(num_epochs))):
+            model.train()
+            for batch in dataloader_train:
+                # Move inputs and labels to device
+                batch = {k: v.to(device) for k, v in batch.items()}
 
-            # Zero the gradients
-            optimizer.zero_grad()
+                # Zero the gradients
+                optimizer.zero_grad()
+                
+                # Forward pass
+                outputs = model(**batch)
+
+                # Backward pass and optimization
+                loss = outputs.loss
+                loss.backward()
+                optimizer.step()
             
-            # Forward pass
-            outputs = model(**batch)
+            prof.step()  # Step the profiler
 
-            # Backward pass and optimization
-            loss = outputs.loss
-            loss.backward()
-            optimizer.step()
-        
-        # Validation loop
-        if epoch % 10 == 0:
-            metrics = do_eval(
-                model,
-                dataloader_val,
-                device,
-                loss,
-                target=dataset_val.translate_dict['essential'],
-                progress_bar=progress_bar,
-            )
-            metrics_list.append(metrics)
+            # Validation loop
+            if epoch % 10 == 0:
+                metrics = do_eval(
+                    model,
+                    dataloader_val,
+                    device,
+                    loss,
+                    target=dataset_val.translate_dict['essential'],
+                    progress_bar=progress_bar,
+                )
+                metrics_list.append(metrics)
 
     # Save the metrics
     if torch.distributed.get_rank() == 0:  # Save only on rank 0
-        metrics_path = SAVE_DIR / "metrics.json"
+        metrics_path = save_folder / "metrics.json"
         with open(metrics_path, "w") as f:
             json.dump(metrics_list, f, indent=4)
 
@@ -219,6 +234,8 @@ def main():
     Main function to run the training script.
     """
     args = parse_args()
+    # Set the save directory
+    os.makedirs(args.save_folder, exist_ok=True)
     
     # Train the model
     model = do_train(
@@ -227,13 +244,12 @@ def main():
         batch_size=args.batch_size,
         num_epochs=args.num_epochs,
         learning_rate=args.learning_rate,
-        world_size=args.world_size,
+        save_folder=args.save_folder,
     )
     
     # Save the model
     if torch.distributed.get_rank() == 0:  # Save only on rank 0
-        os.makedirs(SAVE_DIR, exist_ok=True)
-        model.save_pretrained(SAVE_DIR / args.save_name)
+        model.save_pretrained(args.save_folder / 'model')
     
 if __name__ == "__main__":
     main()
