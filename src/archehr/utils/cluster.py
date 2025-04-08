@@ -1,4 +1,7 @@
+import os
 import subprocess
+
+import torch
 
 
 def get_idle_gpus():
@@ -18,3 +21,17 @@ def get_idle_gpus():
             idle_gpus.append(gpu_index)
     
     return idle_gpus
+
+
+def initialize_profiler(save_folder):
+    
+    profiler = torch.profiler.profile(
+        activities=[torch.profiler.ProfilerActivity.CUDA],
+        schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=2),
+        on_trace_ready=torch.profiler.tensorboard_trace_handler(
+            os.path.join(save_folder, 'profile'),
+        ),
+        with_stack=True,
+    )
+        
+    return profiler

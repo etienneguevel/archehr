@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 from argparse import ArgumentParser, Namespace
@@ -16,6 +17,7 @@ from archehr.eval import do_eval
 from archehr.cross_encode.nli_deberta import remove_last_layer
 from archehr.data.utils import load_data, make_query_sentence_pairs
 from archehr.data.dataset import QADataset
+from archehr.utils.cluster import initialize_profiler
 
 
 def parse_args() -> Namespace:
@@ -176,18 +178,15 @@ def do_train(
     
     # Initialize the metrics list
     metrics_list = []
+
+    # Initialise the profiler
+    if rank == 0: 
+        profiler = initialize_profiler(save_folder, distributed=True,)
     
-    with torch.profiler.profile(
-        activities=[
-            torch.profiler.ProfilerActivity.CPU,
-            torch.profiler.ProfilerActivity.CUDA,
-        ],
-        schedule=torch.profiler.schedule(wait=1, warmup=1, active=3),
-        on_trace_ready=torch.profiler.tensorboard_trace_handler(
-            os.path.join(save_folder, f'profile_{torch.distributed.get_rank()}'),
-        ),
-        with_stack=True,
-    ) as prof:
+    else:
+        profiler = contextlib.nullcontext()
+
+    with profiler as prof:
         for epoch in (progress_bar := tqdm(range(num_epochs))):
             model.train()
             for batch in dataloader_train:

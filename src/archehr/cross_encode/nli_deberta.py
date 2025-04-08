@@ -1,5 +1,6 @@
 import torch.nn as nn
 
+
 def remove_last_layer(model: nn.Module) -> nn.Module:
     """
     Remove the last layer of the model.
