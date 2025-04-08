@@ -32,6 +32,8 @@ def initialize_profiler(save_folder):
             os.path.join(save_folder, 'profile'),
         ),
         with_stack=True,
+        record_shapes=True,
+        with_flops=True,
     )
         
     return profiler
