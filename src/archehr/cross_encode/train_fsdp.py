@@ -182,7 +182,7 @@ def do_train(
         ],
         schedule=torch.profiler.schedule(wait=1, warmup=1, active=3),
         on_trace_ready=torch.profiler.tensorboard_trace_handler(
-            save_folder / f'profile_{torch.distributed.get_rank()}',
+            os.path.join(save_folder, f'profile_{torch.distributed.get_rank()}'),
         ),
         with_stack=True,
     ) as prof:
@@ -219,7 +219,7 @@ def do_train(
 
     # Save the metrics
     if torch.distributed.get_rank() == 0:  # Save only on rank 0
-        metrics_path = save_folder / "metrics.json"
+        metrics_path = os.path.join(save_folder, "metrics.json")
         with open(metrics_path, "w") as f:
             json.dump(metrics_list, f, indent=4)
 
@@ -249,7 +249,7 @@ def main():
     
     # Save the model
     if torch.distributed.get_rank() == 0:  # Save only on rank 0
-        model.save_pretrained(args.save_folder / 'model')
+        model.save_pretrained(os.path.join(args.save_folder, 'model'))
     
 if __name__ == "__main__":
     main()
