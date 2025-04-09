@@ -181,7 +181,7 @@ def do_train(
 
     # Initialise the profiler
     if rank == 0: 
-        profiler = initialize_profiler(save_folder, distributed=True,)
+        profiler = initialize_profiler(save_folder)
     
     else:
         profiler = contextlib.nullcontext()
@@ -204,7 +204,8 @@ def do_train(
                 loss.backward()
                 optimizer.step()
             
-            prof.step()  # Step the profiler
+            if rank == 0:         
+                prof.step()  # Step the profiler
 
             # Validation loop
             if epoch % 10 == 0:
