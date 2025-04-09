@@ -244,6 +244,7 @@ def main():
     os.makedirs(args.save_folder, exist_ok=True)
     
     # Train the model
+    torch.cuda.memory._record_memory_history()
     _ = do_train(
         model_name=args.model_name,
         data_path=args.data_path,
@@ -251,6 +252,9 @@ def main():
         num_epochs=args.num_epochs,
         learning_rate=args.learning_rate,
         save_folder=args.save_folder,
+    )
+    torch.cuda.memory._dump_snapshot(
+        os.path.join(args.save_folder, "memory_snapshot.pickle"),
     )
 
     
