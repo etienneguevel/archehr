@@ -182,7 +182,8 @@ def do_train(
     # Initialise the profiler
     if rank == 0: 
         profiler = initialize_profiler(save_folder)
-    
+        torch.cuda.memory._record_memory_history()
+
     else:
         profiler = contextlib.nullcontext()
 
@@ -219,6 +220,11 @@ def do_train(
                 )
                 metrics_list.append(metrics)
 
+            if (epoch > 3) & (rank == 0):
+                torch.cuda.memory._dump_snapshot(
+                    os.path.join(save_folder, "memory_snapshot.pickle"),
+                )
+
     # Save the metrics
     if torch.distributed.get_rank() == 0:  # Save only on rank 0
         metrics_path = os.path.join(save_folder, "metrics.json")
@@ -244,7 +250,6 @@ def main():
     os.makedirs(args.save_folder, exist_ok=True)
     
     # Train the model
-    torch.cuda.memory._record_memory_history()
     _ = do_train(
         model_name=args.model_name,
         data_path=args.data_path,
@@ -252,9 +257,6 @@ def main():
         num_epochs=args.num_epochs,
         learning_rate=args.learning_rate,
         save_folder=args.save_folder,
-    )
-    torch.cuda.memory._dump_snapshot(
-        os.path.join(args.save_folder, "memory_snapshot.pickle"),
     )
 
     
