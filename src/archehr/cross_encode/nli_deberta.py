@@ -20,7 +20,7 @@ def remove_last_layer(model: nn.Module) -> nn.Module:
         )
 
         # Set the parameters to require gradients
-        for name, param in model.classifier.state_dict().items():
+        for name, param in model.classifier.named_parameters():
             if 'classifier' in name:
                 param.requires_grad = True
             else:
