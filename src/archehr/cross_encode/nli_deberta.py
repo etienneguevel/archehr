@@ -20,7 +20,7 @@ def remove_last_layer(model: nn.Module) -> nn.Module:
         )
 
         # Set the parameters to require gradients
-        for name, param in model.classifier.named_parameters():
+        for name, param in model.named_parameters():
             if 'classifier' in name:
                 param.requires_grad = True
             else:
@@ -29,4 +29,7 @@ def remove_last_layer(model: nn.Module) -> nn.Module:
     else:
         raise ValueError("Model does not have a recognizable last layer.")
 
+    num_trainable_params = sum([p.numel() for p in model.parameters() if p.requires_grad])
+    print(f'model has {num_trainable_params} trainable parameters.')
+    
     return model

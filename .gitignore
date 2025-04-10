@@ -2,3 +2,4 @@
 __pycache__/
 !/src/data/
 logs
+*.ipynb_checkpoints

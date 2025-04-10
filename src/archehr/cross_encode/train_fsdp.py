@@ -142,7 +142,10 @@ def do_train(
 
     # Wrap the model with FSDP
     model = wrap(model)
-    model = FSDP(model)
+    model = FSDP(model, use_orig_params=True)
+    
+    num_trainable_params = sum([p.numel() for p in model.parameters() if p.requires_grad == True])
+    print(f'There are {num_trainable_params} trainable params\n\n')
 
     # Make the queries
     pairs_train = make_query_sentence_pairs(data_train)
@@ -220,7 +223,7 @@ def do_train(
                 )
                 metrics_list.append(metrics)
 
-            if (epoch > 3) & (rank == 0):
+            if (epoch == 5) & (rank == 0):
                 torch.cuda.memory._dump_snapshot(
                     os.path.join(save_folder, "memory_snapshot.pickle"),
                 )

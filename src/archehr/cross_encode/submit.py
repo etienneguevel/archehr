@@ -17,14 +17,14 @@ def main():
     args = parse_args()
 
     # Check for idle GPUs
-    idle_gpus = get_idle_gpus()
-    if len(idle_gpus) < args.world_size:
+    # idle_gpus = get_idle_gpus()
+    # if len(idle_gpus) < args.world_size:
         # If not enough idle GPUs are available, raise an error
-        raise ValueError("The number of idle GPUs is less than asked.")
+    #    raise ValueError("The number of idle GPUs is less than asked.")
 
     # Set CUDA_VISIBLE_DEVICES to the idle GPUs
-    os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, idle_gpus))    
-    print(f"Using GPUs: {os.environ['CUDA_VISIBLE_DEVICES']}")
+    # os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, idle_gpus))    
+    # print(f"Using GPUs: {os.environ['CUDA_VISIBLE_DEVICES']}")
 
     # Run the training script
     script_path = BASE_DIR / "cross_encode" / "train_fsdp.py"
