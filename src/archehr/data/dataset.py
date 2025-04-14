@@ -1,5 +1,6 @@
 import torch
 from torch import Tensor
+from tqdm import tqdm
 from transformers import AutoModel, AutoTokenizer
 
 from archehr.data.utils import last_token_pool, to_device
@@ -60,7 +61,7 @@ class QADatasetEmbedding(torch.utils.data.Dataset):
 
         vector_store = []
 
-        for item in self.data:
+        for item in tqdm(self.data):
             query, sentence = item['query']
 
             # make the encoding
