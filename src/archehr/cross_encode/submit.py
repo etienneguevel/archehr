@@ -26,6 +26,11 @@ def main():
     # os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, idle_gpus))    
     # print(f"Using GPUs: {os.environ['CUDA_VISIBLE_DEVICES']}")
 
+    # Search the idle GPUs
+    idle_gpus = get_idle_gpus()
+    os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, idle_gpus))
+    print(f"Using GPUs: {os.environ['CUDA_VISIBLE_DEVICES']}")
+    
     # Run the training script
     script_path = BASE_DIR / "cross_encode" / "train_fsdp.py"
     prompt = " ".join([f"--{arg} {val}" for arg, val in vars(args).items()])
