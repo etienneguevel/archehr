@@ -66,15 +66,12 @@ class QADatasetEmbedding(torch.utils.data.Dataset):
         if isinstance(encoding, torch.Tensor):
             encoding = encoding.to(self.device)
 
-        elif isinstance(encoding, dict):
+        else:
             encoding = {
                 k: v.to(self.device)
                 for k, v in encoding.items()
             }
-        
-        else:
-            raise ValueError(f"Invalid encoding type: {type(encoding)}")
-                
+            
         # make the embedding
         with torch.no_grad():
             outputs = self.model(**encoding)
