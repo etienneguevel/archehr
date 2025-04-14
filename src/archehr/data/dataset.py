@@ -66,4 +66,4 @@ class QADatasetEmbedding(torch.utils.data.Dataset):
         with torch.no_grad():
             embedding = self.model(**encoding)
         
-        return embedding.logits.squeeze(0).to(device), self.translate_dict[item['label']]
+        return embedding.logits.squeeze(0).to(self.device), self.translate_dict[item['label']]
