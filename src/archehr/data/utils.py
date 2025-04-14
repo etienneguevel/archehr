@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from xml.etree import ElementTree as ET
 
+import torch
+from torch import Tensor
 
 def load_data(data_path: str) -> List[Dict[str, Any]]:
     """
@@ -103,3 +105,18 @@ def make_query_sentence_pairs(
                 )
     
     return query_sentence_pairs
+
+def last_token_pool(
+    last_hidden_states: Tensor,
+    attention_mask: Tensor
+) -> Tensor:
+    left_padding = (attention_mask[:, -1].sum() == attention_mask.shape[0])
+    if left_padding:
+        return last_hidden_states[:, -1]
+    else:
+        sequence_lengths = attention_mask.sum(dim=1) - 1
+        batch_size = last_hidden_states.shape[0]
+        return last_hidden_states[torch.arange(
+            batch_size,
+            device=last_hidden_states.device
+        ), sequence_lengths]

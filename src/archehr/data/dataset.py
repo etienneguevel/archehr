@@ -1,5 +1,7 @@
 import torch
 
+from archehr.data.utils import last_token_pool
+
 
 class QADataset(torch.utils.data.Dataset):
     def __init__(self, data, tokenizer):
@@ -60,10 +62,29 @@ class QADatasetEmbedding(torch.utils.data.Dataset):
             truncation=False,
             return_tensors='pt'
         )
-        encoding.to(self.device)
+    
+        if isinstance(encoding, torch.Tensor):
+            encoding = encoding.to(self.device)
 
+        elif isinstance(encoding, dict):
+            encoding = {
+                k: v.to(self.device)
+                for k, v in encoding.items()
+            }
+        
+        else:
+            raise ValueError(f"Invalid encoding type: {type(encoding)}")
+                
         # make the embedding
         with torch.no_grad():
-            embedding = self.model(**encoding)
+            outputs = self.model(**encoding)
+            embedding = last_token_pool(
+                outputs.last_hidden_state,
+                encoding['attention_mask']
+            )
+
         
-        return embedding.logits.squeeze(0).to(self.device), self.translate_dict[item['label']]
+        return (
+            embedding.squeeze(0).to(self.device),
+            self.translate_dict[item['label']]
+        )
