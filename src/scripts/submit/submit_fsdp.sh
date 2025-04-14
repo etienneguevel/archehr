@@ -1,16 +1,16 @@
 #!/bin/bash
-
 # Activate the Python virtual environment
-source activate /home/guevel/.conda/envs/archehr
+source /home/guevel/.bashrc
+conda activate archehr
 
 # Define the arguments for the submit.py script
-MODEL_NAME="cross-encoder/nli-deberta-v3-base"
+MODEL_NAME="Alibaba-NLP/gte-Qwen2-7B-instruct"
 DATA_PATH="/home/guevel/projects/archehr/data/1.1/dev"
-BATCH_SIZE=16
-NUM_EPOCHS=50
+BATCH_SIZE=64
+NUM_EPOCHS=300
 LEARNING_RATE=1e-5
-SAVE_NAME="/home/guevel/projects/archehr/logs/fsdp_deberta_fc"
-WORLD_SIZE=7  # Number of GPUs to use
+SAVE_NAME="/home/guevel/projects/archehr/logs/Qwen2_gte_mlp"
+WORLD_SIZE=6  # Number of GPUs to use
 
 # Make a log file for text outputs
 mkdir -p "$SAVE_NAME"
