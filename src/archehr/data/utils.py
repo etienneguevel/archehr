@@ -120,3 +120,37 @@ def last_token_pool(
             batch_size,
             device=last_hidden_states.device
         ), sequence_lengths]
+    
+def to_device(
+    batch: Dict[str, Any] | Tensor,
+    device: torch.device
+) -> Dict[str, Tensor]:
+    """
+    Move the batch to the specified device.
+    
+    Args:
+        batch (Dict[str, Any]): The batch to move.
+        device (torch.device): The device to move the batch to.
+    
+    Returns:
+        Dict[str, Tensor]: The batch on the specified device.
+    """
+    if isinstance(batch, Tensor):
+            batch = batch.to(device)
+
+    else:
+        batch = {
+            k: v.to(device)
+            for k, v in batch.items()
+        }
+
+    return batch
+
+def get_labels(batch):
+
+    if isinstance(batch, dict):
+                labels = batch.pop('labels')
+    else:
+        batch, labels = batch
+
+    return batch, labels

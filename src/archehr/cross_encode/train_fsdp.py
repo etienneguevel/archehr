@@ -9,14 +9,13 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp.wrap import wrap
 from torch.distributed import init_process_group, destroy_process_group
 from tqdm import tqdm
-from transformers import (
-    AutoTokenizer, AutoModelForSequenceClassification, DataCollatorWithPadding
-)
+from transformers import AutoTokenizer, AutoModel
 
-from archehr.eval import do_eval
-from archehr.cross_encode.nli_deberta import remove_last_layer
-from archehr.data.utils import load_data, make_query_sentence_pairs
-from archehr.data.dataset import QADataset
+from archehr.eval.eval import do_eval
+from archehr.data.utils import (
+    load_data, make_query_sentence_pairs, to_device, get_labels
+)
+from archehr.data.dataset import QADatasetEmbedding
 from archehr.utils.cluster import initialize_profiler
 
 
@@ -92,7 +91,7 @@ def load_model(model_name: str) -> tuple[nn.Module, AutoTokenizer]:
         tuple: A tuple containing the model and tokenizer.
     """
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForSequenceClassification.from_pretrained(model_name)
+    model = AutoModel.from_pretrained(model_name)
     
     return model, tokenizer
 
@@ -137,14 +136,16 @@ def do_train(
     
     # Load the model and tokenizer
     model, tokenizer = load_model(model_name)
-    model = remove_last_layer(model)
     model.to(device)
+    model.eval()
 
     # Wrap the model with FSDP
     model = wrap(model)
     model = FSDP(model, use_orig_params=True)
     
-    num_trainable_params = sum([p.numel() for p in model.parameters() if p.requires_grad == True])
+    num_trainable_params = sum([
+        p.numel() for p in model.parameters() if p.requires_grad
+    ])
     print(f'There are {num_trainable_params} trainable params\n\n')
 
     # Make the queries
@@ -152,33 +153,27 @@ def do_train(
     pairs_val = make_query_sentence_pairs(data_val)
 
     # Create the dataset
-    dataset_train = QADataset(pairs_train, tokenizer)
-    dataset_val = QADataset(pairs_val, tokenizer)
+
+    dataset_train = QADatasetEmbedding(pairs_train, tokenizer, model)
+    dataset_val = QADatasetEmbedding(pairs_val, tokenizer, model)
 
     # Create the dataloader
-    collator = DataCollatorWithPadding(
-        tokenizer=tokenizer,
-        padding=True,
-        return_tensors="pt",
-    )
-
     dataloader_train = torch.utils.data.DataLoader(
         dataset_train,
         batch_size=batch_size,
         shuffle=True,
-        collate_fn=collator,
     )
 
     dataloader_val = torch.utils.data.DataLoader(
         dataset_val,
         batch_size=batch_size,
         shuffle=False,
-        collate_fn=collator,
     )
 
     # Define the optimizer
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-    
+    loss = nn.CrossEntropyLoss()
+
     # Initialize the metrics list
     metrics_list = []
 
@@ -195,17 +190,23 @@ def do_train(
             model.train()
             for batch in dataloader_train:
                 # Move inputs and labels to device
-                batch = {k: v.to(device) for k, v in batch.items()}
+                batch, labels = get_labels(batch)
+
+                batch = to_device(batch, device)
+                labels = to_device(labels, device)
 
                 # Zero the gradients
                 optimizer.zero_grad()
                 
                 # Forward pass
-                outputs = model(**batch)
+                if isinstance(batch, dict):
+                    outputs = model(**batch)
+                else:
+                    outputs = model(batch)
 
                 # Backward pass and optimization
-                loss = outputs.loss
-                loss.backward()
+                l_ = loss(outputs, labels)
+                l_.backward()
                 optimizer.step()
             
             if rank == 0:         

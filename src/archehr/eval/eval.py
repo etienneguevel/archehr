@@ -1,5 +1,7 @@
 import torch
 
+from archehr.data.utils import to_device, get_labels
+
 def do_eval(model, dataloader, device, loss, target, progress_bar=None):
     """
     Evaluate the model on the validation set.
@@ -23,18 +25,22 @@ def do_eval(model, dataloader, device, loss, target, progress_bar=None):
     with torch.no_grad():
         for batch in dataloader:
             # Move inputs and labels to device
-            batch = {k: v.to(device) for k, v in batch.items()}
-            labels = batch['labels']
+            batch, labels = get_labels(batch)
+            batch = to_device(batch, device)
+            labels = labels.to(device)
 
             # Forward pass
-            outputs = model(**batch)
+            if isinstance(batch, dict):
+                outputs = model(**batch).logits
+            else:
+                outputs = model(batch)
 
             # Compute the loss
-            loss = outputs.loss
-            val_loss += loss.item()
+            l_ = loss(outputs, labels)
+            val_loss += l_.item()
 
             # Compute accuracy
-            _, predicted = torch.max(outputs.logits, dim=1)
+            _, predicted = torch.max(outputs, dim=1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 

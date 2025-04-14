@@ -10,7 +10,7 @@ from transformers import (
 )
 
 from archehr import SAVE_DIR
-from archehr.eval import do_eval
+from archehr.eval.eval import do_eval
 from archehr.data.utils import load_data, make_query_sentence_pairs
 from archehr.data.dataset import QADataset
 from archehr.cross_encode.nli_deberta import remove_last_layer

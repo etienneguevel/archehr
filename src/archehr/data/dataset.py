@@ -1,6 +1,7 @@
 import torch
+from torch import Tensor
 
-from archehr.data.utils import last_token_pool
+from archehr.data.utils import last_token_pool, to_device
 
 
 class QADataset(torch.utils.data.Dataset):
@@ -36,7 +37,7 @@ class QADatasetEmbedding(torch.utils.data.Dataset):
         super(QADatasetEmbedding, self).__init__()
         self.data = data
         self.tokenizer = tokenizer
-        self.model = model.to(device)
+        self.model = model
         self.device = device
         self.translate_dict = {
             u: k
@@ -62,24 +63,22 @@ class QADatasetEmbedding(torch.utils.data.Dataset):
             truncation=False,
             return_tensors='pt'
         )
-    
-        if isinstance(encoding, torch.Tensor):
-            encoding = encoding.to(self.device)
 
-        else:
-            encoding = {
-                k: v.to(self.device)
-                for k, v in encoding.items()
-            }
+        # move to the correct device
+        encoding = to_device(encoding, self.model.device)    
             
         # make the embedding
         with torch.no_grad():
-            outputs = self.model(**encoding)
+            if isinstance(encoding, Tensor):
+                outputs = self.model(encoding)
+            
+            else:
+                outputs = self.model(**encoding)
+
             embedding = last_token_pool(
                 outputs.last_hidden_state,
                 encoding['attention_mask']
             )
-
         
         return (
             embedding.squeeze(0).to(self.device),
