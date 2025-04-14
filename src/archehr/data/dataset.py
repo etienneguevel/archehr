@@ -1,5 +1,6 @@
 import torch
 from torch import Tensor
+from transformers import AutoModel, AutoTokenizer
 
 from archehr.data.utils import last_token_pool, to_device
 
@@ -33,12 +34,12 @@ class QADataset(torch.utils.data.Dataset):
 
 
 class QADatasetEmbedding(torch.utils.data.Dataset):
-    def __init__(self, data, tokenizer, model, device=torch.device('cpu')):
+    def __init__(self, data, model_name, device=torch.device('cpu')):
         super(QADatasetEmbedding, self).__init__()
         self.data = data
-        self.tokenizer = tokenizer
-        self.model = model
+        self.model_name = model_name
         self.device = device
+        self._vector_store = self._make_vector_store(model_name, device)
         self.translate_dict = {
             "essential": 0,
             "not-relevant": 1,
@@ -49,39 +50,56 @@ class QADatasetEmbedding(torch.utils.data.Dataset):
     def emb_size(self):
         return self[0][0].size()
 
+    def _make_vector_store(self, model_name, device):
+
+        model = AutoModel.from_pretrained(model_name, trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+        model.eval()
+        model.to(device)
+
+        vector_store = []
+
+        for item in self.data:
+            query, sentence = item['query']
+
+            # make the encoding
+            encoding = tokenizer(
+                query,
+                sentence,
+                padding=False,
+                truncation=False,
+                return_tensors='pt'
+            )
+
+            # move to the correct device
+            encoding = to_device(encoding, model.device)
+
+            # make the embedding
+            with torch.no_grad():
+                if isinstance(encoding, Tensor):
+                    outputs = model(encoding)
+                else:
+                    outputs = model(**encoding)
+
+                embedding = last_token_pool(
+                    outputs.last_hidden_state,
+                    encoding['attention_mask']
+                )
+            
+            vector_store.append(embedding.squeeze(0).to(device))
+
+        return torch.stack(vector_store)
+
+
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
         item = self.data[idx]
-        query, sentence = item['query']
+        vector = self._vector_store[idx, :]
 
-        # make the encoding
-        encoding = self.tokenizer(
-            query,
-            sentence,
-            padding=False,
-            truncation=False,
-            return_tensors='pt'
-        )
-
-        # move to the correct device
-        encoding = to_device(encoding, self.model.device)    
-            
-        # make the embedding
-        with torch.no_grad():
-            if isinstance(encoding, Tensor):
-                outputs = self.model(encoding)
-            
-            else:
-                outputs = self.model(**encoding)
-
-            embedding = last_token_pool(
-                outputs.last_hidden_state,
-                encoding['attention_mask']
-            )
-        
         return (
-            embedding.squeeze(0).to(self.device),
+            vector,
             self.translate_dict[item['label']]
         )
