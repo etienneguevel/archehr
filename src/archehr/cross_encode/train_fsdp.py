@@ -12,6 +12,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModel
 
 from archehr.eval.eval import do_eval
+from archehr.eval.mlp import Mlp
 from archehr.data.utils import (
     load_data, make_query_sentence_pairs, to_device, get_labels
 )
@@ -139,15 +140,6 @@ def do_train(
     model.to(device)
     model.eval()
 
-    # Wrap the model with FSDP
-    model = wrap(model)
-    model = FSDP(model, use_orig_params=True)
-    
-    num_trainable_params = sum([
-        p.numel() for p in model.parameters() if p.requires_grad
-    ])
-    print(f'There are {num_trainable_params} trainable params\n\n')
-
     # Make the queries
     pairs_train = make_query_sentence_pairs(data_train)
     pairs_val = make_query_sentence_pairs(data_val)
@@ -170,8 +162,23 @@ def do_train(
         shuffle=False,
     )
 
+    # Create the MLP
+    mlp = Mlp(
+        dataset_train.emb_size.numel(),
+        out_features=len(dataset_train.translate_dict)
+    )
+
+    # Wrap the model with FSDP
+    mlp = wrap(mlp)
+    mlp = FSDP(mlp, use_orig_params=True)
+    
+    num_trainable_params = sum([
+        p.numel() for p in mlp.parameters() if p.requires_grad
+    ])
+    print(f'There are {num_trainable_params} trainable params\n\n')
+
     # Define the optimizer
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+    optimizer = torch.optim.AdamW(mlp.parameters(), lr=learning_rate)
     loss = nn.CrossEntropyLoss()
 
     # Initialize the metrics list
@@ -187,7 +194,7 @@ def do_train(
 
     with profiler as prof:
         for epoch in (progress_bar := tqdm(range(num_epochs))):
-            model.train()
+            mlp.train()
             for batch in dataloader_train:
                 # Move inputs and labels to device
                 batch, labels = get_labels(batch)
@@ -200,9 +207,9 @@ def do_train(
                 
                 # Forward pass
                 if isinstance(batch, dict):
-                    outputs = model(**batch)
+                    outputs = mlp(**batch)
                 else:
-                    outputs = model(batch)
+                    outputs = mlp(batch)
 
                 # Backward pass and optimization
                 l_ = loss(outputs, labels)
@@ -215,7 +222,7 @@ def do_train(
             # Validation loop
             if epoch % 10 == 0:
                 metrics = do_eval(
-                    model,
+                    mlp,
                     dataloader_val,
                     device,
                     loss,
@@ -237,12 +244,12 @@ def do_train(
 
     # Save the model
     if torch.distributed.get_rank() == 0:  # Save only on rank 0
-        model.save_pretrained(os.path.join(save_folder, 'model'))
+        mlp.save_pretrained(os.path.join(save_folder, 'model'))
 
     # Cleanup distributed process group
     destroy_process_group()
 
-    return model
+    return mlp
 
 
 def main():

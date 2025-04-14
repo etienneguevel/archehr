@@ -40,8 +40,9 @@ class QADatasetEmbedding(torch.utils.data.Dataset):
         self.model = model
         self.device = device
         self.translate_dict = {
-            u: k
-            for k, u in enumerate(set([i['label'] for i in data]))
+            "essential": 0,
+            "not-relevant": 1,
+            "supplementary": 1,
         }
 
     @property
