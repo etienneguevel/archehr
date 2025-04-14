@@ -166,7 +166,7 @@ def do_train(
     mlp = Mlp(
         dataset_train.emb_size.numel(),
         out_features=len(dataset_train.translate_dict)
-    )
+    ).to(device)
 
     # Wrap the model with FSDP
     mlp = wrap(mlp)
