@@ -175,13 +175,13 @@ def main():
 
     # Create the models
     mlp = Mlp(
-        input_size=dataset_train.emb_size,
-        hidden_size=dataset_train.emb_size,
+        in_features=dataset_train.emb_size,
+        hidden_features=dataset_train.emb_size,
         out_features=len(dataset_train.translate_dict),
     )
 
     fc = Fc(
-        input_size=dataset_train.emb_size,
+        in_features=dataset_train.emb_size,
         out_features=len(dataset_train.translate_dict),
     )
 
