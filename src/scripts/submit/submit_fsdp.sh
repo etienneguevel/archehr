@@ -10,7 +10,7 @@ BATCH_SIZE=64
 NUM_EPOCHS=300
 LEARNING_RATE=1e-5
 SAVE_NAME="/home/guevel/projects/archehr/logs/Qwen2_gte_mlp"
-WORLD_SIZE=6  # Number of GPUs to use
+WORLD_SIZE=5  # Number of GPUs to use
 
 # Make a log file for text outputs
 mkdir -p "$SAVE_NAME"

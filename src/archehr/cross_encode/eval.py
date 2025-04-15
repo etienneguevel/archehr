@@ -3,10 +3,11 @@ from argparse import ArgumentParser
 
 import torch
 import torch.nn as nn
+from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from archehr.data.utils import load_data, make_query_sentence_pairs
+from archehr.data.utils import load_data, make_query_sentence_pairs, to_device, get_labels
 from archehr.data.dataset import QADatasetEmbedding
 from archehr.eval.eval import do_eval
 from archehr.eval.basic_models import Mlp, Fc
@@ -94,6 +95,7 @@ def do_train(
     val_loader = DataLoader(dataset_val, batch_size=batch_size, shuffle=False)
 
     # Define the optimizer
+    loss = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
     # Training loop
@@ -102,17 +104,23 @@ def do_train(
         model.train()
         for batch in train_loader:
             # Move inputs and labels to device
-            batch = {k: v.to(device) for k, v in batch.items()}
+            batch, labels = get_labels(batch)
+            batch = to_device(batch, device)
+            labels = to_device(labels, device)
 
             # Zero the gradients
             optimizer.zero_grad()
             
             # Forward pass
-            outputs = model(**batch)
+            if isinstance(batch, Tensor):
+                outputs = model(batch)
+
+            else:
+                outputs = model(**batch)
 
             # Backward pass and optimization
-            loss = outputs.loss
-            loss.backward()
+            l_ = loss(outputs, labels)
+            l_.backward()
             optimizer.step()
         
         # Validation loop
@@ -174,14 +182,15 @@ def main():
     )
 
     # Create the models
+    emb_dim = dataset_train.emb_size.numel()
+    print("Embeddings dimension: ", emb_dim, "\n")
     mlp = Mlp(
-        in_features=dataset_train.emb_size,
-        hidden_features=dataset_train.emb_size,
+        in_features=emb_dim,
         out_features=len(dataset_train.translate_dict),
     )
 
     fc = Fc(
-        in_features=dataset_train.emb_size,
+        in_features=emb_dim,
         out_features=len(dataset_train.translate_dict),
     )
 
