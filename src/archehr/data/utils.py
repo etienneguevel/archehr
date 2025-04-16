@@ -136,7 +136,7 @@ def to_device(
         Dict[str, Tensor]: The batch on the specified device.
     """
     if isinstance(batch, Tensor):
-            batch = batch.to(device)
+        batch = batch.to(device)
 
     else:
         batch = {
@@ -149,7 +149,8 @@ def to_device(
 def get_labels(batch):
 
     if isinstance(batch, dict):
-                labels = batch.pop('labels')
+        labels = batch.pop('labels')
+
     else:
         batch, labels = batch
 
