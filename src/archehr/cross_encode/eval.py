@@ -47,7 +47,7 @@ def parse_args():
         help="Learning rate for the optimizer."
     )
 
-    return parser
+    return parser.parse_args()
 
 def make_datasets(data_path, model_name, device):
     data = load_data(data_path)
@@ -162,22 +162,20 @@ def do_train(
     """)
 
     return model
-    
-def main():
 
-    parser = parse_args()
-    args = parser.parse_args()
+def eval_embeddings(
+    data_path: str,
+    model_name: str,
+    batch_size: int,
+    num_epochs: int,
+    learning_rate: float,
+    device: torch.device = torch.device('cpu')
+):
 
-    # Set the device
-    idle_gpus = get_idle_gpus()
-    os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, idle_gpus))
-
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    
     # Load the data
     dataset_train, dataset_val = make_datasets(
-        args.data_path,
-        args.model_name,
+        data_path,
+        model_name,
         device=device
     )
 
@@ -194,20 +192,46 @@ def main():
         out_features=len(dataset_train.translate_dict),
     )
 
+    models = []
     for m in [mlp, fc]:
         m.to(device)
         # Train the model
         print(f"Training model: {m}")
 
-        _ = do_train(
+        m_trained = do_train(
             m,
             dataset_train,
             dataset_val,
-            batch_size=args.batch_size,
-            num_epochs=args.num_epochs,
-            learning_rate=args.learning_rate,
+            batch_size=batch_size,
+            num_epochs=num_epochs,
+            learning_rate=learning_rate,
             device=device
         )
+    
+        models.append(m_trained)
+
+    return models
+
+def main():
+
+    # Parse the arguments
+    args = parse_args()
+
+    # Set the device
+    idle_gpus = get_idle_gpus()
+    os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, idle_gpus))
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    # Evaluate the embeddings
+    _ = eval_embeddings(
+        args.data_path,
+        args.model_name,
+        args.batch_size,
+        args.num_epochs,
+        args.learning_rate,
+        device=device
+    )
 
 if __name__ == "__main__":
     main()
