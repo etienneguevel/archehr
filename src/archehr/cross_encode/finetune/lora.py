@@ -145,7 +145,7 @@ def do_train(
     model, tokenizer, peft_config = _build_model(model_path, device)
     
     # Build the dataset
-    dataset_train, dataset_val = _make_datasets(data_path)
+    dataset_train, dataset_val = _make_datasets(data_path, tokenizer)
 
     # Make the trainer
     trainer = _setup_trainer(
