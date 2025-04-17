@@ -1,7 +1,7 @@
 import os
 
 from archehr import BASE_DIR
-from archehr.cross_encode.train_fsdp import parse_args
+from archehr.cross_encode.train.train_fsdp import parse_args
 from archehr.utils.cluster import get_idle_gpus
 
 

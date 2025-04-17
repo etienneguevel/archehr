@@ -5,8 +5,10 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "accelerate>=1.6.0",
     "jupyterlab>=4.3.6",
     "pandas>=2.2.3",
+    "peft>=0.15.2",
     "protobuf>=6.30.2",
     "sentence-transformers>=4.0.1",
     "sentencepiece>=0.2.0",
@@ -16,6 +18,7 @@ dependencies = [
     "torchao>=0.10.0",
     "torchtune>=0.6.1",
     "transformers>=4.50.3",
+    "trl>=0.16.1",
 ]
 
 [build-system]

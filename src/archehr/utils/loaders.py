@@ -1,7 +1,6 @@
 from enum import Enum
 
 import torch
-from accelerate import infer_auto_device_map, init_empty_weights
 from transformers import AutoTokenizer, AutoModel
 
 

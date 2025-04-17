@@ -1,24 +1,89 @@
+from functools import partial
+
+import numpy as np
 from peft import get_peft_model, LoraConfig, TaskType
+from transformers.trainer_utils import EvalPrediction
+from trl import SFTTrainer, SFTConfig
 
+from archehr import PROJECT_DIR
 from archehr.utils.loaders import load_model_hf, DeviceType
+from archehr.data.dataset import QADataset
+from archehr.data.utils import load_data, make_query_sentence_pairs
 
 
-def do_train(
-    model_path: str,
-    device: DeviceType = 'distributed',
+def compute_metrics(
+    eval_pred: EvalPrediction,
+    target_class: int
 ):
+    # Unpack eval_pred    
+    logits = eval_pred.predictions
+    labels = eval_pred.label_ids
+    preds = np.argmax(logits, axis=-1)
 
+    # Calculate correct pred, total amount
+    total = labels.shape[0]
+    correct = np.sum((preds == labels))
+
+    # Calculate tp, fp, fn
+    tp = np.sum((labels == target_class) & (preds == target_class))
+    fp = np.sum((labels != target_class) & (preds == target_class))
+    fn = np.sum((labels == target_class) & (preds != target_class))
+
+    # Compute metrics
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+    f1 = (
+        2 * (precision * recall) / (precision + recall) 
+        if (precision + recall) > 0 else 0
+    )
+    acc = correct / total
+
+    return {
+        "acc": acc,
+        "ppv": precision,
+        "rec": recall,
+        "f1": f1,
+    }
+
+
+def _make_datasets(
+    data_path: str,
+    tokenizer
+):
+    # Load the data
+    data = load_data(data_path)
+    n_cases = len(data)
+
+    # Split train / val
+    data_train = data[:int(n_cases * 0.8)]
+    data_val = data[int(n_cases * 0.8):]
+
+    pairs_train = make_query_sentence_pairs(data_train)
+    pairs_val = make_query_sentence_pairs(data_val)
+
+    # Make the datasets
+    dataset_train = QADataset(pairs_train, tokenizer)
+    dataset_val = QADataset(pairs_val, tokenizer)
+
+    return dataset_train, dataset_val
+
+def _build_model(
+    model_name: str,
+    device: DeviceType,
+):
     # Load the model
     model, tokenizer = load_model_hf(
-        model_name=model_path,
+        model_name=model_name,
         device=device
     )
 
     # Make the PEFT config
+    # TODO: make it in yaml file
     peft_config = LoraConfig(
         task_type=TaskType.SEQ_CLS, #Sequence cls or Token cls ?
         inference_mode=False,
         r=8,
+        target_modules=["q_proj", "v_proj"],
         lora_alpha=32,
         lora_dropout=0.1
     )
@@ -26,12 +91,77 @@ def do_train(
     # Adapt the model for peft
     model = get_peft_model(model, peft_config)
     print(model.print_trainable_parameters())
-
     print(model)
+
+    return model, tokenizer, peft_config
+
+def _setup_trainer(
+    model,
+    peft_config,
+    train_dataset,
+    val_dataset,
+):
+
+    # Make the training config
+    # TODO: make it in yaml file
+    training_args = SFTConfig(
+        output_dir=PROJECT_DIR / "models/Qwen2",
+        per_device_train_batch_size=8,
+        per_device_eval_batch_size=16,
+        gradient_accumulation_steps=4,
+        evaluation_strategy="epoch",
+        optim="paged_adamw_32bit",
+        logging_steps=10,
+        gradient_checkpointing=True,
+        learning_rate=2e-4,
+        bf16=True,
+        logging_dir=PROJECT_DIR / "logs/Qwen2",
+    )
+
+    # Make the trainer
+    metric_fct = partial(
+        compute_metrics,
+        target_class=val_dataset.translate_dict.get("essential")
+    )
+
+    trainer = SFTTrainer(
+        model=model,
+        args=training_args,
+        peft_config=peft_config,
+        train_dataset=train_dataset,
+        eval_dataset=val_dataset,
+        compute_metrics=metric_fct
+    )
+
+    return trainer
+
+
+def do_train(
+    model_path: str,
+    data_path: str,
+    device: DeviceType = 'distributed',
+):
+    # Build the model / tokenizer
+    model, tokenizer, peft_config = _build_model(model_path, device)
+    
+    # Build the dataset
+    dataset_train, dataset_val = _make_datasets(data_path)
+
+    # Make the trainer
+    trainer = _setup_trainer(
+        model,
+        peft_config,
+        dataset_train,
+        dataset_val,
+    )
+
+    # Launch training
+    trainer.train()
 
 
 if __name__ == "__main__":
     do_train(
         model_path="Alibaba-NLP/gte-Qwen2-7B-instruct",
+        data_path=PROJECT_DIR / "data" / "1.1" / "dev",
         device="distributed"
     )
