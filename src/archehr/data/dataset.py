@@ -1,3 +1,5 @@
+import gc
+
 import torch
 from torch import Tensor
 from tqdm import tqdm
@@ -36,7 +38,7 @@ class QADataset(torch.utils.data.Dataset):
 
 class QADatasetEmbedding(torch.utils.data.Dataset):
     def __init__(self, data, model_name, device: DeviceType = "cpu"):
-        super(QADatasetEmbedding, self).__init__()
+        super().__init__()
         self.data = data
         self.model_name = model_name
         self._vector_store = self._make_vector_store(model_name, device)
@@ -53,7 +55,7 @@ class QADatasetEmbedding(torch.utils.data.Dataset):
     def _make_vector_store(self, model_name, device):
 
         # Load the model and tokenizer
-        model, tokenizer = load_model_hf(model_name)
+        model, tokenizer = load_model_hf(model_name, device)
         model.eval()
 
         # Get the device
@@ -90,6 +92,13 @@ class QADatasetEmbedding(torch.utils.data.Dataset):
             
             vector_store.append(embedding.squeeze(0).to(device))
 
+        # cleanup the memory
+        del model
+        del tokenizer
+
+        gc.collect()
+        torch.cuda.empty_cache()
+            
         return torch.stack(vector_store)
 
 

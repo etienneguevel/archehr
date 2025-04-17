@@ -12,6 +12,8 @@ from archehr.data.dataset import QADatasetEmbedding
 from archehr.eval.eval import do_eval
 from archehr.eval.basic_models import Mlp, Fc
 from archehr.utils.cluster import get_idle_gpus
+from archehr.utils.loaders import DeviceType
+
 
 def parse_args():
 
@@ -49,7 +51,11 @@ def parse_args():
 
     return parser.parse_args()
 
-def make_datasets(data_path, model_name, device):
+def make_datasets(
+    data_path: str,
+    model_name: str,
+    device: DeviceType
+):
     data = load_data(data_path)
     n_cases = len(data)
 
@@ -169,7 +175,7 @@ def eval_embeddings(
     batch_size: int,
     num_epochs: int,
     learning_rate: float,
-    device: torch.device = torch.device('cpu')
+    device: DeviceType = 'cpu'
 ):
 
     # Load the data
@@ -194,7 +200,14 @@ def eval_embeddings(
 
     models = []
     for m in [mlp, fc]:
+        if device == DeviceType.CPU:
+            device = torch.device('cpu')
+
+        else:
+            device = torch.device('cuda')
+
         m.to(device)
+        
         # Train the model
         print(f"Training model: {m}")
 
