@@ -1,9 +1,9 @@
 import torch
 from torch import Tensor
 from tqdm import tqdm
-from transformers import AutoModel, AutoTokenizer
 
 from archehr.data.utils import last_token_pool, to_device
+from archehr.utils.loaders import DeviceType, load_model_hf
 
 
 class QADataset(torch.utils.data.Dataset):
@@ -35,11 +35,10 @@ class QADataset(torch.utils.data.Dataset):
 
 
 class QADatasetEmbedding(torch.utils.data.Dataset):
-    def __init__(self, data, model_name, device=torch.device('cpu')):
+    def __init__(self, data, model_name, device: DeviceType = "cpu"):
         super(QADatasetEmbedding, self).__init__()
         self.data = data
         self.model_name = model_name
-        self.device = device
         self._vector_store = self._make_vector_store(model_name, device)
         self.translate_dict = {
             "essential": 0,
@@ -53,11 +52,12 @@ class QADatasetEmbedding(torch.utils.data.Dataset):
 
     def _make_vector_store(self, model_name, device):
 
-        model = AutoModel.from_pretrained(model_name, trust_remote_code=True)
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-
+        # Load the model and tokenizer
+        model, tokenizer = load_model_hf(model_name)
         model.eval()
-        model.to(device)
+
+        # Get the device
+        device = model.device
 
         vector_store = []
 
