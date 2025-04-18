@@ -47,7 +47,6 @@ def compute_metrics(
 
 def _make_datasets(
     data_path: str,
-    tokenizer
 ):
     # Load the data
     root, labels = load_data(data_path)
@@ -58,18 +57,7 @@ def _make_datasets(
     dataset_train = split_dataset["train"]
     dataset_val = split_dataset["test"]
 
-    # Tokenize the datasets
-    tokenize_train = dataset_train.map(
-        lambda x: tokenizer(x["prompt"], truncation=True, padding="max_length"),
-        batched=True
-    )
-
-    tokenize_val = dataset_val.map(
-        lambda x: tokenizer(x["prompt"], truncation=True, padding="max_length"),
-        batched=True
-    )
-
-    return tokenize_train, tokenize_val
+    return dataset_train, dataset_val
 
 def _build_model(
     model_name: str,
@@ -100,8 +88,7 @@ def _build_model(
     return model, tokenizer, peft_config
 
 def _setup_trainer(
-    model,
-    tokenizer,
+    model_path,
     peft_config,
     train_dataset,
     val_dataset,
@@ -130,7 +117,7 @@ def _setup_trainer(
     )
 
     trainer = SFTTrainer(
-        model=model,
+        model=model_path,
         args=training_args,
         peft_config=peft_config,
         train_dataset=train_dataset,
@@ -147,15 +134,22 @@ def do_train(
     device: DeviceType = 'distributed',
 ):
     # Build the model / tokenizer
-    model, tokenizer, peft_config = _build_model(model_path, device)
+    # model, tokenizer, peft_config = _build_model(model_path, device)
+    peft_config = LoraConfig(
+        task_type=TaskType.SEQ_CLS, #Sequence cls or Token cls ?
+        inference_mode=False,
+        r=8,
+        target_modules=["q_proj", "v_proj"],
+        lora_alpha=32,
+        lora_dropout=0.1
+    )
     
     # Build the dataset
     dataset_train, dataset_val = _make_datasets(data_path)
 
     # Make the trainer
     trainer = _setup_trainer(
-        model,
-        tokenizer,
+        model_path,
         peft_config,
         dataset_train,
         dataset_val,
