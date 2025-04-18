@@ -12,7 +12,7 @@ from archehr.data.utils import load_data, make_hf_dict
 
 def compute_metrics(
     eval_pred: EvalPrediction,
-    target_class: int
+    target_class: str | int
 ):
     # Unpack eval_pred    
     logits = eval_pred.predictions
@@ -114,7 +114,7 @@ def _setup_trainer(
     # Make the trainer
     metric_fct = partial(
         compute_metrics,
-        target_class=val_dataset.translate_dict.get("essential")
+        target_class="essential"
     )
 
     trainer = SFTTrainer(
