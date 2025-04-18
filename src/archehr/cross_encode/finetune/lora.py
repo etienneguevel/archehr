@@ -47,6 +47,7 @@ def compute_metrics(
 
 def _make_datasets(
     data_path: str,
+    tokenizer
 ):
     # Load the data
     root, labels = load_data(data_path)
@@ -54,10 +55,21 @@ def _make_datasets(
     # Split train / val
     dataset = make_hf_dict(root, labels)
     split_dataset = dataset.train_test_split(test_size=0.2)
-    dataset_train = split_dataset['train']
-    dataset_val = split_dataset['test']
+    dataset_train = split_dataset["train"]
+    dataset_val = split_dataset["test"]
 
-    return dataset_train, dataset_val
+    # Tokenize the datasets
+    tokenize_train = dataset_train.map(
+        lambda x: tokenizer(x["prompt"], truncation=True, padding="max_length"),
+        batched=True
+    )
+
+    tokenize_val = dataset_val.map(
+        lambda x: tokenizer(x["prompt"], truncation=True, padding="max_length"),
+        batched=True
+    )
+
+    return tokenize_train, tokenize_val
 
 def _build_model(
     model_name: str,
@@ -121,7 +133,6 @@ def _setup_trainer(
         model=model,
         args=training_args,
         peft_config=peft_config,
-        tokenizer=tokenizer,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
         compute_metrics=metric_fct
