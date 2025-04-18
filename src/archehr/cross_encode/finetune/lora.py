@@ -7,8 +7,7 @@ from trl import SFTTrainer, SFTConfig
 
 from archehr import PROJECT_DIR
 from archehr.utils.loaders import load_model_hf, DeviceType
-from archehr.data.dataset import QADataset
-from archehr.data.utils import load_data, make_query_sentence_pairs
+from archehr.data.utils import load_data, make_hf_dict
 
 
 def compute_metrics(
@@ -48,22 +47,15 @@ def compute_metrics(
 
 def _make_datasets(
     data_path: str,
-    tokenizer
 ):
     # Load the data
-    data = load_data(data_path)
-    n_cases = len(data)
+    root, labels = load_data(data_path)
 
     # Split train / val
-    data_train = data[:int(n_cases * 0.8)]
-    data_val = data[int(n_cases * 0.8):]
-
-    pairs_train = make_query_sentence_pairs(data_train)
-    pairs_val = make_query_sentence_pairs(data_val)
-
-    # Make the datasets
-    dataset_train = QADataset(pairs_train, tokenizer)
-    dataset_val = QADataset(pairs_val, tokenizer)
+    dataset = make_hf_dict(root, labels)
+    split_dataset = dataset.train_test_split(test_size=0.2)
+    dataset_train = split_dataset['train']
+    dataset_val = split_dataset['val']
 
     return dataset_train, dataset_val
 
@@ -97,6 +89,7 @@ def _build_model(
 
 def _setup_trainer(
     model,
+    tokenizer,
     peft_config,
     train_dataset,
     val_dataset,
@@ -128,6 +121,7 @@ def _setup_trainer(
         model=model,
         args=training_args,
         peft_config=peft_config,
+        tokenizer=tokenizer,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
         compute_metrics=metric_fct
@@ -150,6 +144,7 @@ def do_train(
     # Make the trainer
     trainer = _setup_trainer(
         model,
+        tokenizer,
         peft_config,
         dataset_train,
         dataset_val,

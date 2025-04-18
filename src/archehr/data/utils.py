@@ -5,7 +5,9 @@ from typing import Any, Dict, List, Optional
 from xml.etree import ElementTree as ET
 
 import torch
+from datasets import Dataset
 from torch import Tensor
+
 
 def load_data(data_path: str) -> List[Dict[str, Any]]:
     """
@@ -40,6 +42,13 @@ def load_data(data_path: str) -> List[Dict[str, Any]]:
     with open(Path(data_path) / json_file, 'r') as f:
         labels = json.load(f)
 
+    return root, labels
+
+def make_query_sentence_pairs(
+    root,
+    labels,
+    prompt_template: Optional[List[str]] = None,
+):
     # Transform the xml data into a dictionary
     data = []
     for c, label in zip(root.findall('case'), labels, strict=True):
@@ -59,12 +68,6 @@ def load_data(data_path: str) -> List[Dict[str, Any]]:
             ],
         })
 
-    return data
-
-def make_query_sentence_pairs(
-    data,
-    prompt_template: Optional[List[str]] = None,
-):
     prompt_options = [
         'narrative',
         'patient_question',
@@ -105,6 +108,37 @@ def make_query_sentence_pairs(
                 )
     
     return query_sentence_pairs
+
+def get_detailed_instruction(patient_case):
+
+    patient_narrative = patient_case.find('patient_narrative').text
+    clinician_question = patient_case.find('clinician_question').text
+    note_excerpt = patient_case.find('note_excerpt_sentences').text
+
+    return [
+    f'''Instruct: You are given a question from a patient : {patient_narrative} which has been reformulated by a clinician {clinician_question}, as well as a detailed report about his medical trajectory in a xml format {note_excerpt}.
+    Query: is sentence {i} relevant for the question ?
+    '''
+        for i, _ in enumerate(
+            patient_case.find('note_excerpt_sentences').findall('sentence'),
+        )
+    ]
+
+def make_hf_dict(
+    root,
+    labels
+):
+
+    output_dict = {
+        'prompt': [],
+        'labels': []
+    }
+
+    for c, labs in zip(root.findall('case'), labels):
+        output_dict['prompt'].extend(get_detailed_instruction(c))
+        output_dict['labels'].extend([a['relevance'] for a in labs['answers']])
+    
+    return Dataset.from_dict(output_dict)
 
 def last_token_pool(
     last_hidden_states: Tensor,
