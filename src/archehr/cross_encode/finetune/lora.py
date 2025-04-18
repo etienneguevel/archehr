@@ -55,7 +55,7 @@ def _make_datasets(
     dataset = make_hf_dict(root, labels)
     split_dataset = dataset.train_test_split(test_size=0.2)
     dataset_train = split_dataset['train']
-    dataset_val = split_dataset['val']
+    dataset_val = split_dataset['test']
 
     return dataset_train, dataset_val
 
