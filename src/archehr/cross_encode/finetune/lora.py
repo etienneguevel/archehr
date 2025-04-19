@@ -116,12 +116,18 @@ def _setup_trainer(
         target_class="essential"
     )
 
+    def formatting_prompts(prompts):
+        output_texts = prompts["prompt"]
+        return output_texts
+
+
     trainer = SFTTrainer(
         model=model_path,
         args=training_args,
         peft_config=peft_config,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
+        formatting_func=formatting_prompts,
         compute_metrics=metric_fct
     )
 
@@ -145,6 +151,7 @@ def do_train(
     )
     
     # Build the dataset
+    # TODO: make a formatting_prompts fct -> KeyError 'text'
     dataset_train, dataset_val = _make_datasets(data_path)
 
     # Make the trainer
