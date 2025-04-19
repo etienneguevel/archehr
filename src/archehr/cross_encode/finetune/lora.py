@@ -103,6 +103,7 @@ def _setup_trainer(
         gradient_accumulation_steps=4,
         evaluation_strategy="epoch",
         optim="paged_adamw_32bit",
+        label_names=["labels"],
         logging_steps=10,
         gradient_checkpointing=True,
         learning_rate=2e-4,
