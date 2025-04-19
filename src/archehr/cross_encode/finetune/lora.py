@@ -121,7 +121,7 @@ def _setup_trainer(
         output_texts = prompts["prompt"]
         return output_texts
 
-
+    # TODO: replace the formatting_prompts fct -> use the one of make_hf_dict
     trainer = SFTTrainer(
         model=model_path,
         args=training_args,
@@ -152,7 +152,8 @@ def do_train(
     )
     
     # Build the dataset
-    # TODO: make a formatting_prompts fct -> KeyError 'text'
+    # TODO: error in the shape of the dataset output tensors -> not enough dim
+    # Check their size, and modify dataset building function.
     dataset_train, dataset_val = _make_datasets(data_path)
 
     # Make the trainer
