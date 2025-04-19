@@ -136,7 +136,7 @@ def make_hf_dict(
 
     for c, labs in zip(root.findall('case'), labels):
         output_dict['prompt'].extend(get_detailed_instruction(c))
-        output_dict['labels'].extend([a['relevance'] for a in labs['answers']])
+        output_dict['labels'].extend([[a['relevance']] for a in labs['answers']])
     
     return Dataset.from_dict(output_dict)
 
