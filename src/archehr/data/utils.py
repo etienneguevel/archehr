@@ -136,7 +136,7 @@ def make_hf_dict(
 ):
     
     output_dict = {
-        'prompt': [],
+        'text': [],
         'labels': []
     }
 

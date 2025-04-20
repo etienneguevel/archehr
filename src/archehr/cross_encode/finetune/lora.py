@@ -95,7 +95,6 @@ def _setup_trainer(
         optim="paged_adamw_32bit",
         label_names=["labels"],
         logging_steps=10,
-        gradient_checkpointing=True,
         learning_rate=2e-4,
         bf16=True,
         load_best_model_at_end=True,
