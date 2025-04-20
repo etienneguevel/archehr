@@ -2,12 +2,12 @@ from functools import partial
 
 import numpy as np
 from peft import get_peft_model, LoraConfig, TaskType
+from transformers import Trainer, TrainingArguments
 from transformers.trainer_utils import EvalPrediction
-from trl import SFTTrainer, SFTConfig
 
 from archehr import PROJECT_DIR
 from archehr.utils.loaders import load_model_hf, DeviceType
-from archehr.data.utils import load_data, make_hf_dict
+from archehr.data.utils import load_data, make_hf_dict, TRANSLATE_DICT
 
 
 def compute_metrics(
@@ -88,7 +88,7 @@ def _build_model(
     return model, tokenizer, peft_config
 
 def _setup_trainer(
-    model_path,
+    model,
     peft_config,
     train_dataset,
     val_dataset,
@@ -96,39 +96,35 @@ def _setup_trainer(
 
     # Make the training config
     # TODO: make it in yaml file
-    training_args = SFTConfig(
+    training_args = TrainingArguments(
         output_dir=PROJECT_DIR / "models/Qwen2",
-        per_device_train_batch_size=8,
+        per_device_train_batch_size=16,
         per_device_eval_batch_size=16,
         gradient_accumulation_steps=4,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
+        save_strategy="epoch",
         optim="paged_adamw_32bit",
         label_names=["labels"],
         logging_steps=10,
         gradient_checkpointing=True,
         learning_rate=2e-4,
         bf16=True,
+        load_best_model_at_end=True,
         logging_dir=PROJECT_DIR / "logs/Qwen2",
     )
 
     # Make the trainer
     metric_fct = partial(
         compute_metrics,
-        target_class="essential"
+        target_class=TRANSLATE_DICT.get("essential")
     )
 
-    def formatting_prompts(prompts):
-        output_texts = prompts["prompt"]
-        return output_texts
-
-    # TODO: replace the formatting_prompts fct -> use the one of make_hf_dict
-    trainer = SFTTrainer(
-        model=model_path,
+    trainer = Trainer(
+        model=model,
         args=training_args,
         peft_config=peft_config,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
-        formatting_func=formatting_prompts,
         compute_metrics=metric_fct
     )
 
@@ -141,6 +137,8 @@ def do_train(
     device: DeviceType = 'distributed',
 ):
     # Build the model / tokenizer
+    model, tokenizer = _build_model(model_path, device)
+    
     # model, tokenizer, peft_config = _build_model(model_path, device)
     peft_config = LoraConfig(
         task_type=TaskType.SEQ_CLS, #Sequence cls or Token cls ?
@@ -153,15 +151,21 @@ def do_train(
     
     # Build the dataset
     # TODO: error in the shape of the dataset output tensors -> not enough dim
-    # Check their size, and modify dataset building function.
     dataset_train, dataset_val = _make_datasets(data_path)
+
+    # Tokenizer the datasets
+    def tokenize(example):
+        return tokenizer(example["text"], padding="max_length", truncation=True)
+
+    train_dataset = dataset_train.map(tokenize, batched=True)
+    eval_dataset = dataset_val.map(tokenize, batched=True)
 
     # Make the trainer
     trainer = _setup_trainer(
         model_path,
         peft_config,
-        dataset_train,
-        dataset_val,
+        train_dataset,
+        eval_dataset,
     )
 
     # Launch training
