@@ -137,17 +137,7 @@ def do_train(
     device: DeviceType = 'distributed',
 ):
     # Build the model / tokenizer
-    model, tokenizer = _build_model(model_path, device)
-    
-    # model, tokenizer, peft_config = _build_model(model_path, device)
-    peft_config = LoraConfig(
-        task_type=TaskType.SEQ_CLS, #Sequence cls or Token cls ?
-        inference_mode=False,
-        r=8,
-        target_modules=["q_proj", "v_proj"],
-        lora_alpha=32,
-        lora_dropout=0.1
-    )
+    model, tokenizer, peft_config = _build_model(model_path, device)
     
     # Build the dataset
     # TODO: error in the shape of the dataset output tensors -> not enough dim
@@ -162,7 +152,7 @@ def do_train(
 
     # Make the trainer
     trainer = _setup_trainer(
-        model_path,
+        model,
         peft_config,
         train_dataset,
         eval_dataset,
