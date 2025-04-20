@@ -62,22 +62,12 @@ def _make_datasets(
 def _build_model(
     model_name: str,
     device: DeviceType,
+    peft_config: LoraConfig,
 ):
     # Load the model
     model, tokenizer = load_model_hf(
         model_name=model_name,
         device=device
-    )
-
-    # Make the PEFT config
-    # TODO: make it in yaml file
-    peft_config = LoraConfig(
-        task_type=TaskType.SEQ_CLS, #Sequence cls or Token cls ?
-        inference_mode=False,
-        r=8,
-        target_modules=["q_proj", "v_proj"],
-        lora_alpha=32,
-        lora_dropout=0.1
     )
     
     # Adapt the model for peft
@@ -89,7 +79,6 @@ def _build_model(
 
 def _setup_trainer(
     model,
-    peft_config,
     train_dataset,
     val_dataset,
 ):
@@ -122,7 +111,6 @@ def _setup_trainer(
     trainer = Trainer(
         model=model,
         args=training_args,
-        peft_config=peft_config,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
         compute_metrics=metric_fct
@@ -136,8 +124,19 @@ def do_train(
     data_path: str,
     device: DeviceType = 'distributed',
 ):
+    # Make the PEFT config
+    # TODO: make it in yaml file
+    peft_config = LoraConfig(
+        task_type=TaskType.SEQ_CLS, #Sequence cls or Token cls ?
+        inference_mode=False,
+        r=8,
+        target_modules=["q_proj", "v_proj"],
+        lora_alpha=32,
+        lora_dropout=0.1
+    )
+
     # Build the model / tokenizer
-    model, tokenizer, peft_config = _build_model(model_path, device)
+    model, tokenizer = _build_model(model_path, device, peft_config)
     
     # Build the dataset
     # TODO: error in the shape of the dataset output tensors -> not enough dim
@@ -153,7 +152,6 @@ def do_train(
     # Make the trainer
     trainer = _setup_trainer(
         model,
-        peft_config,
         train_dataset,
         eval_dataset,
     )
