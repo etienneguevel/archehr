@@ -75,7 +75,7 @@ def _build_model(
     print(model.print_trainable_parameters())
     print(model)
 
-    return model, tokenizer, peft_config
+    return model, tokenizer
 
 def _setup_trainer(
     model,
