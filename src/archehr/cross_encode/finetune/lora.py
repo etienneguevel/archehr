@@ -91,6 +91,7 @@ def _setup_trainer(
         per_device_eval_batch_size=16,
         gradient_accumulation_steps=4,
         eval_strategy="epoch",
+        fsdp="full_shard auto_wrap",
         save_strategy="epoch",
         optim="paged_adamw_32bit",
         label_names=["labels"],
@@ -123,6 +124,9 @@ def do_train(
     data_path: str,
     device: DeviceType = 'distributed',
 ):
+    # Launch accelerate
+    # accelerator = Accelerator()
+
     # Make the PEFT config
     # TODO: make it in yaml file
     peft_config = LoraConfig(
@@ -143,7 +147,12 @@ def do_train(
 
     # Tokenizer the datasets
     def tokenize(example):
-        return tokenizer(example["text"], padding="max_length", truncation=True)
+        return tokenizer(
+            example["text"],
+            max_length=8192,
+            padding="max_length",
+            truncation=True
+        )
 
     train_dataset = dataset_train.map(tokenize, batched=True)
     eval_dataset = dataset_val.map(tokenize, batched=True)
