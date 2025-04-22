@@ -6,8 +6,8 @@ from transformers import AutoTokenizer, AutoModel
 
 class DeviceType(str, Enum):
     CPU = "cpu"
-    GPU = "gpu"
-    DISTRIBUTED = "distributed"
+    GPU = "cuda"
+    DISTRIBUTED = "auto"
 
 def load_model_hf(model_name: str, device: str):
 

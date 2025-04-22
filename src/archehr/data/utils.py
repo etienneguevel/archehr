@@ -143,7 +143,7 @@ def make_hf_dict(
     for c, labs in zip(root.findall('case'), labels):
         output_dict['text'].extend(get_detailed_instruction(c))
         output_dict['labels'].extend(
-            TRANSLATE_DICT.get(a['relevance'], 1) for a in labs['answers']
+            [TRANSLATE_DICT.get(a['relevance'], 1)] for a in labs['answers']
         )
     
     return Dataset.from_dict(output_dict)

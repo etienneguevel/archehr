@@ -2,12 +2,13 @@ from functools import partial
 
 import numpy as np
 from peft import get_peft_model, LoraConfig, TaskType
-from transformers import Trainer, TrainingArguments
+from transformers import AutoTokenizer, Trainer, TrainingArguments
 from transformers.trainer_utils import EvalPrediction
 
 from archehr import PROJECT_DIR
-from archehr.utils.loaders import load_model_hf, DeviceType
+from archehr.utils.loaders import DeviceType
 from archehr.data.utils import load_data, make_hf_dict, TRANSLATE_DICT
+from archehr.models.qwen2.Qwen2 import Qwen2EmbClassification
 
 
 def compute_metrics(
@@ -17,9 +18,19 @@ def compute_metrics(
     # Unpack eval_pred    
     logits = eval_pred.predictions
     labels = eval_pred.label_ids
-    preds = np.argmax(logits, axis=-1)
+
+    # Safeguard for DTensors
+    if hasattr(logits, "to_local"):
+        logits = logits.to_local()
+
+    if hasattr(labels, "to_local"):
+        labels = labels.to_local()
+
+    logits = np.array(logits)
+    labels = np.array(labels)
 
     # Calculate correct pred, total amount
+    preds = np.argmax(logits, axis=-1)
     total = labels.shape[0]
     correct = np.sum((preds == labels))
 
@@ -59,18 +70,27 @@ def _make_datasets(
 
     return dataset_train, dataset_val
 
-def _build_model(
+def _build_model_and_tokenizer(
     model_name: str,
+    num_labels: int,
     device: DeviceType,
     peft_config: LoraConfig,
 ):
     # Load the model
-    model, tokenizer = load_model_hf(
-        model_name=model_name,
-        device=device
+    model = Qwen2EmbClassification.from_pretrained(
+        model_name,
+        num_labels,
+        device_map=device,
+        trust_remote_code=True,
     )
-    
-    # Adapt the model for peft
+
+    # Load the tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name,
+        trust_remote_code=True
+    )
+
+    # Apply LoRA to the model
     model = get_peft_model(model, peft_config)
     print(model.print_trainable_parameters())
     print(model)
@@ -87,17 +107,16 @@ def _setup_trainer(
     # TODO: make it in yaml file
     training_args = TrainingArguments(
         output_dir=PROJECT_DIR / "models/Qwen2",
-        per_device_train_batch_size=16,
-        per_device_eval_batch_size=16,
-        gradient_accumulation_steps=4,
+        per_device_train_batch_size=1,
+        per_device_eval_batch_size=8,
+        gradient_accumulation_steps=256,
+        fp16=True,
         eval_strategy="epoch",
-        fsdp="full_shard auto_wrap",
         save_strategy="epoch",
         optim="paged_adamw_32bit",
         label_names=["labels"],
         logging_steps=10,
         learning_rate=2e-4,
-        bf16=True,
         load_best_model_at_end=True,
         logging_dir=PROJECT_DIR / "logs/Qwen2",
     )
@@ -122,8 +141,12 @@ def _setup_trainer(
 def do_train(
     model_path: str,
     data_path: str,
-    device: DeviceType = 'distributed',
+    device: DeviceType = "auto",
 ):
+    """
+    Function made to be launched with accelerate : 
+    `accelerate launch src/archehr/cross_encode/finetune/lora.py`
+    """
     # Launch accelerate
     # accelerator = Accelerator()
 
@@ -137,9 +160,15 @@ def do_train(
         lora_alpha=32,
         lora_dropout=0.1
     )
+    
 
     # Build the model / tokenizer
-    model, tokenizer = _build_model(model_path, device, peft_config)
+    model, tokenizer = _build_model_and_tokenizer(
+        model_path,
+        2,
+        device,
+        peft_config
+    )
     
     # Build the dataset
     # TODO: error in the shape of the dataset output tensors -> not enough dim
@@ -155,7 +184,13 @@ def do_train(
         )
 
     train_dataset = dataset_train.map(tokenize, batched=True)
+    train_dataset.set_format(
+        type="torch", columns=["input_ids", "attention_mask", "labels",]
+    )
     eval_dataset = dataset_val.map(tokenize, batched=True)
+    eval_dataset.set_format(
+        type="torch", columns=["input_ids", "attention_mask", "labels",]
+    )
 
     # Make the trainer
     trainer = _setup_trainer(
@@ -172,5 +207,5 @@ if __name__ == "__main__":
     do_train(
         model_path="Alibaba-NLP/gte-Qwen2-7B-instruct",
         data_path=PROJECT_DIR / "data" / "1.1" / "dev",
-        device="distributed"
+        device="cuda"
     )
