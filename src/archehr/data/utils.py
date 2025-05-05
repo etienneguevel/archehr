@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from xml.etree import ElementTree as ET
 
+import pandas as pd
 import torch
 from datasets import Dataset
 from torch import Tensor
@@ -119,34 +120,135 @@ def get_detailed_instruction(patient_case):
 
     patient_narrative = patient_case.find('patient_narrative').text
     clinician_question = patient_case.find('clinician_question').text
-    note_excerpt = patient_case.find('note_excerpt_sentences').text
+    note_excerpt = patient_case.find('note_excerpt').text
 
     return [
-    f'''Instruct: You are given a question from a patient : {patient_narrative} which has been reformulated by a clinician {clinician_question}, as well as a detailed report about his medical trajectory in a xml format {note_excerpt}.
-    Query: is sentence {i} relevant for the question ?
-    '''
-        for i, _ in enumerate(
-            patient_case.find('note_excerpt_sentences').findall('sentence'),
+    (
+    f'Instruct: You are given a question from a patient:\n {patient_narrative}\n'
+    f'Which has been reformulated by a clinician: {clinician_question}\n'
+    # f'As well as a detailed report about his medical trajectory in a xml format:' 
+    # f'{note_excerpt}\n'
+    f'Query: is sentence: {sentence.text}\nrelevant for the question ?'
+    )
+        for i, sentence in enumerate(
+            patient_case.find('note_excerpt_sentences').findall('sentence')
         )
     ]
 
+def translate_xlm_pandas(file_path):
+    # Load the data
+    root, labels = load_data(file_path)
+
+    # Make it into dataframe
+    data = []
+    for i, (c, label) in enumerate(zip(root.findall('case'), labels, strict=True)):
+        case_data = [
+            [
+                i,
+                c.find("note_excerpt").text,
+                c.find("clinician_question").text,
+                j,
+                sent.text,
+                lab["relevance"]
+            ]
+            for j, (sent, lab) in enumerate(
+                zip(c.find("note_excerpt_sentences").findall("sentence"), label["answers"])
+            )
+        ]
+        data.extend(case_data)
+
+    return pd.DataFrame(data, columns=["case_id", "note_excerpt", "question_generated", "sentence_id", "ref_excerpt", "relevance"])
+
+def make_instruction(row):
+    instruction = (
+        "Instruct: Given a patient medical history, a medical question and a phrase"
+        "from the medical history, determine if this phrase is relevant to answer the"
+        " question.\n"
+    )
+
+    query = (
+        f"Query: \nMedical history of the patient:\n{row.note_excerpt}\n"
+        f"Question:\n{row.question_generated}\nPhrase:\n{row.ref_excerpt}"
+    )
+
+    return instruction + query
+
+def make_augmented_dataset(data_path, augmented_data_path):
+    # Load data
+    df_data = translate_xlm_pandas(data_path)
+    df_data["source"] = "archehr"
+    df_augmented = pd.read_excel(augmented_data_path)
+    df_augmented["source"] = "augmented"
+    
+    # Split train / val
+    df_train = pd.concat([
+        df_data[df_data.case_id < 15],
+        df_augmented
+    ])
+
+    df_val = df_data[~(df_data.case_id < 15)]
+
+    # Make the prompts
+    df_train["text"] = df_train.apply(make_instruction, axis=1)
+    df_val["text"] = df_val.apply(make_instruction, axis=1)
+
+    # Translate the labels
+    df_train["labels"] = df_train["relevance"].apply(
+        lambda x: TRANSLATE_DICT.get(x)
+    )
+    df_val["labels"] = df_val["relevance"].apply(
+        lambda x: TRANSLATE_DICT.get(x)
+    )
+
+    # Return in hf format
+    df_train = Dataset.from_pandas(df_train)
+    df_val = Dataset.from_pandas(df_val)
+
+    return df_train, df_val
+
 def make_hf_dict(
     root,
-    labels
+    labels,
+    split=0.2,
 ):
-    
-    output_dict = {
+    # Create the train / eval dicts
+    train_dict = {
+        'case': [],
         'text': [],
         'labels': []
     }
 
-    for c, labs in zip(root.findall('case'), labels):
-        output_dict['text'].extend(get_detailed_instruction(c))
-        output_dict['labels'].extend(
-            [TRANSLATE_DICT.get(a['relevance'], 1)] for a in labs['answers']
-        )
+    eval_dict = {
+        'case': [],
+        'text': [],
+        'labels': []
+    }
+
+    # Find the split
+    n_cases = len(root.findall('case'))
+    sep = int((1 - split) * n_cases)
+
+
+    for i, (c, labs) in enumerate(zip(root.findall('case'), labels)):
+
+        if i < sep:
+            train_dict['case'].extend([i for _ in labs['answers']])
+            train_dict['text'].extend(get_detailed_instruction(c))
+            train_dict['labels'].extend(
+                [TRANSLATE_DICT.get(a['relevance'], 1)] for a in labs['answers']
+            )
+        
+        else:
+            eval_dict['case'].extend([i for _ in labs['answers']])
+            eval_dict['text'].extend(get_detailed_instruction(c))
+            eval_dict['labels'].extend(
+                [TRANSLATE_DICT.get(a['relevance'], 1)] for a in labs['answers']
+            )
+        
+    train_dataset = Dataset.from_dict(train_dict)
+    eval_dataset = Dataset.from_dict(eval_dict)
     
-    return Dataset.from_dict(output_dict)
+    return train_dataset, eval_dataset
 
 def last_token_pool(
     last_hidden_states: Tensor,

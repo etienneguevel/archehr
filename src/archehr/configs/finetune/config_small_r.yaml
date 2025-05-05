@@ -1,0 +1,8 @@
+training_args:
+ gradient_accumulation_steps: 8
+
+lora_args:
+  r: 4
+  target_modules:
+    - "q_proj"
+    - "v_proj"

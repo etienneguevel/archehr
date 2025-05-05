@@ -1,0 +1,6 @@
+lora_args:
+  r: 8
+  target_modules:
+    - "q_proj"
+    - "v_proj"
+    - "k_proj"
