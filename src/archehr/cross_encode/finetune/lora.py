@@ -1,15 +1,39 @@
+import warnings
+from argparse import ArgumentParser
+from copy import deepcopy
 from functools import partial
 
 import numpy as np
-from peft import get_peft_model, LoraConfig, TaskType
-from transformers import AutoTokenizer, Trainer, TrainingArguments
+from omegaconf import OmegaConf
+from peft import LoraConfig, TaskType
+from transformers import (
+    AutoTokenizer, Trainer, TrainerCallback, TrainingArguments
+)
 from transformers.trainer_utils import EvalPrediction
 
 from archehr import PROJECT_DIR
 from archehr.utils.loaders import DeviceType
-from archehr.data.utils import load_data, make_hf_dict, TRANSLATE_DICT
+from archehr.data.utils import load_data, make_augmented_dataset, TRANSLATE_DICT
 from archehr.models.qwen2.Qwen2 import Qwen2EmbClassification
 
+
+BASE_CONFIG = PROJECT_DIR / "src/archehr/configs/finetune/base_config.yaml"
+
+def get_args_parser():
+    parser = ArgumentParser()
+    parser.add_argument(
+        "--folder_name",
+        required=True,
+        type=str,
+    )
+
+    parser.add_argument(
+        "--config_path",
+        default=BASE_CONFIG,
+        type=str,
+    )
+
+    return parser.parse_args()
 
 def compute_metrics(
     eval_pred: EvalPrediction,
@@ -19,18 +43,14 @@ def compute_metrics(
     logits = eval_pred.predictions
     labels = eval_pred.label_ids
 
-    # Safeguard for DTensors
-    if hasattr(logits, "to_local"):
-        logits = logits.to_local()
-
-    if hasattr(labels, "to_local"):
-        labels = labels.to_local()
-
-    logits = np.array(logits)
-    labels = np.array(labels)
-
     # Calculate correct pred, total amount
-    preds = np.argmax(logits, axis=-1)
+    
+    logits = np.array(logits)
+    preds = np.argmax(logits, -1)
+    labels = np.array(labels)
+    if labels.ndim > 1:
+        labels = labels[:, 0]
+
     total = labels.shape[0]
     correct = np.sum((preds == labels))
 
@@ -49,26 +69,24 @@ def compute_metrics(
     acc = correct / total
 
     return {
-        "acc": acc,
-        "ppv": precision,
-        "rec": recall,
-        "f1": f1,
+        "acc": round(acc, 3),
+        "ppv": round(precision, 3),
+        "rec": round(recall, 3),
+        "f1": round(f1, 3),
     }
 
 
 def _make_datasets(
     data_path: str,
 ):
-    # Load the data
-    root, labels = load_data(data_path)
+    # Load the data
+    file_path = data_path / "1.1" / "dev"
+    augmented_data_path = data_path / "qa_results_structured.xlsx"
+    train_dataset, eval_dataset = make_augmented_dataset(
+        file_path, augmented_data_path
+    )
 
-    # Split train / val
-    dataset = make_hf_dict(root, labels)
-    split_dataset = dataset.train_test_split(test_size=0.2)
-    dataset_train = split_dataset["train"]
-    dataset_val = split_dataset["test"]
-
-    return dataset_train, dataset_val
+    return train_dataset, eval_dataset
 
 def _build_model_and_tokenizer(
     model_name: str,
@@ -76,24 +94,19 @@ def _build_model_and_tokenizer(
     device: DeviceType,
     peft_config: LoraConfig,
 ):
-    # Load the model
+    # Make the model
+    # 1. Load base model
     model = Qwen2EmbClassification.from_pretrained(
         model_name,
-        num_labels,
-        device_map=device,
-        trust_remote_code=True,
+        2,
+        peft_config,
+        trust_remote_code=True
     )
 
-    # Load the tokenizer
     tokenizer = AutoTokenizer.from_pretrained(
         model_name,
         trust_remote_code=True
     )
-
-    # Apply LoRA to the model
-    model = get_peft_model(model, peft_config)
-    print(model.print_trainable_parameters())
-    print(model)
 
     return model, tokenizer
 
@@ -101,32 +114,47 @@ def _setup_trainer(
     model,
     train_dataset,
     val_dataset,
+    folder_name: str,
+    train_args,
 ):
-
     # Make the training config
-    # TODO: make it in yaml file
+    strategy = train_args.pop("strategy")
+
     training_args = TrainingArguments(
-        output_dir=PROJECT_DIR / "models/Qwen2",
-        per_device_train_batch_size=1,
-        per_device_eval_batch_size=8,
-        gradient_accumulation_steps=256,
-        fp16=True,
-        eval_strategy="epoch",
-        save_strategy="epoch",
-        optim="paged_adamw_32bit",
+        output_dir=PROJECT_DIR / "models" / folder_name,
+        eval_strategy=strategy,
+        save_strategy=strategy,
         label_names=["labels"],
-        logging_steps=10,
-        learning_rate=2e-4,
         load_best_model_at_end=True,
-        logging_dir=PROJECT_DIR / "logs/Qwen2",
+        logging_dir=PROJECT_DIR / "logs"/ folder_name,
+        save_total_limit=3,
+        **train_args
     )
 
-    # Make the trainer
+    print("Training with:\n", training_args)
+
+    # Make the metric fct
     metric_fct = partial(
         compute_metrics,
         target_class=TRANSLATE_DICT.get("essential")
     )
 
+    # Make a custom callback to also evaluate the training metrics
+    class CustomCallback(TrainerCallback):
+        def __init__(self, trainer) -> None:
+            super().__init__()
+            self._trainer = trainer
+        
+        def on_epoch_end(self, args, state, control, **kwargs):
+            if control.should_evaluate:
+                control_copy = deepcopy(control)
+                self._trainer.evaluate(
+                    eval_dataset=self._trainer.train_dataset,
+                    metric_key_prefix="train"
+                )
+                return control_copy
+
+    # Build the trainer
     trainer = Trainer(
         model=model,
         args=training_args,
@@ -134,6 +162,7 @@ def _setup_trainer(
         eval_dataset=val_dataset,
         compute_metrics=metric_fct
     )
+    trainer.add_callback(CustomCallback(trainer))
 
     return trainer
 
@@ -141,6 +170,9 @@ def _setup_trainer(
 def do_train(
     model_path: str,
     data_path: str,
+    folder_name:str,
+    lora_args,
+    training_args,
     device: DeviceType = "auto",
 ):
     """
@@ -151,17 +183,14 @@ def do_train(
     # accelerator = Accelerator()
 
     # Make the PEFT config
-    # TODO: make it in yaml file
+    target_modules = list(lora_args.pop("target_modules"))
     peft_config = LoraConfig(
         task_type=TaskType.SEQ_CLS, #Sequence cls or Token cls ?
         inference_mode=False,
-        r=8,
-        target_modules=["q_proj", "v_proj"],
-        lora_alpha=32,
-        lora_dropout=0.1
+        target_modules=target_modules,
+        **lora_args
     )
     
-
     # Build the model / tokenizer
     model, tokenizer = _build_model_and_tokenizer(
         model_path,
@@ -171,15 +200,14 @@ def do_train(
     )
     
     # Build the dataset
-    # TODO: error in the shape of the dataset output tensors -> not enough dim
     dataset_train, dataset_val = _make_datasets(data_path)
 
     # Tokenizer the datasets
     def tokenize(example):
         return tokenizer(
             example["text"],
-            max_length=8192,
-            padding="max_length",
+            padding="longest",
+            max_length=1024,
             truncation=True
         )
 
@@ -191,21 +219,42 @@ def do_train(
     eval_dataset.set_format(
         type="torch", columns=["input_ids", "attention_mask", "labels",]
     )
+    print(f"Training dataset: {len(train_dataset)} elements.\n")
+    print(f"Evaluation dataset: {len(eval_dataset)} elements.\n")
 
     # Make the trainer
     trainer = _setup_trainer(
         model,
         train_dataset,
         eval_dataset,
+        folder_name,
+        training_args,
     )
 
     # Launch training
     trainer.train()
 
+    # Save the best model
+    model = trainer.model
+    model.save_pretrained(PROJECT_DIR / "final_model_qwen2")
 
-if __name__ == "__main__":
+def main():
+    warnings.filterwarnings("ignore")
+    args = get_args_parser()
+    base_config = OmegaConf.load(BASE_CONFIG)
+    config = OmegaConf.load(args.config_path)
+
+    training_conf = OmegaConf.merge(base_config, config)
+
     do_train(
         model_path="Alibaba-NLP/gte-Qwen2-7B-instruct",
-        data_path=PROJECT_DIR / "data" / "1.1" / "dev",
-        device="cuda"
+        folder_name=args.folder_name,
+        data_path=PROJECT_DIR / "data",
+        device="cpu",
+        lora_args=training_conf.get("lora_args"),
+        training_args=training_conf.get("training_args"),
     )
+
+
+if __name__ == "__main__":
+    main()
